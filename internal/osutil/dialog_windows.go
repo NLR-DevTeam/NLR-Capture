@@ -1,4 +1,4 @@
-package winutil
+package osutil
 
 import (
 	"errors"
@@ -50,15 +50,6 @@ const (
 	ofnFileMustExist   = 0x00001000
 	ofnExplorer        = 0x00080000
 )
-
-// ErrCancelled is returned when the user closes a dialog without choosing.
-var ErrCancelled = errors.New("cancelled")
-
-// Filter is one entry of a dialog's file type list, e.g. {"HAR 文件",
-// "*.har"}.
-type Filter struct {
-	Name, Pattern string
-}
 
 func filterString(fs []Filter) *uint16 {
 	if len(fs) == 0 {

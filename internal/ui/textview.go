@@ -25,7 +25,6 @@ import (
 
 	"nlrcapture/internal/capture"
 	"nlrcapture/internal/config"
-	"nlrcapture/internal/winutil"
 )
 
 // editorLimit is the largest text shown in a selectable editor; longer
@@ -446,13 +445,8 @@ func (b *bodyView) save(s *capture.Session) {
 			name += exts
 		}
 	}
-	hwnd := a.host.HWND()
-	go func() {
-		p, err := winutil.SaveFile(hwnd, "保存正文", name, "", nil)
-		if err != nil {
-			return
-		}
-		err = os.WriteFile(p, data, 0o644)
+	a.choosePath(true, "保存正文", name, "", nil, func(p string) {
+		err := os.WriteFile(p, data, 0o644)
 		a.Post(func() {
 			if err != nil {
 				a.Toast(toastError, "保存失败："+err.Error())
@@ -460,7 +454,7 @@ func (b *bodyView) save(s *capture.Session) {
 				a.Toast(toastOK, "已保存")
 			}
 		})
-	}()
+	})
 }
 
 func extFor(mt string) string {

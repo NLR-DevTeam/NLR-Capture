@@ -11,24 +11,19 @@ import (
 
 	"nlrcapture/internal/capture"
 	"nlrcapture/internal/config"
+	"nlrcapture/internal/osutil"
 	"nlrcapture/internal/proxy"
-	"nlrcapture/internal/winutil"
 )
 
-var harFilters = []winutil.Filter{{Name: "HAR 文件", Pattern: "*.har"}, {Name: "JSON", Pattern: "*.json"}, {Name: "所有文件", Pattern: "*.*"}}
+var harFilters = []osutil.Filter{{Name: "HAR 文件", Pattern: "*.har"}, {Name: "JSON", Pattern: "*.json"}, {Name: "所有文件", Pattern: "*.*"}}
 
 func regexpQuote(s string) string { return regexp.QuoteMeta(s) }
 
 // pickImport asks for a HAR file and imports it.
 func (a *App) pickImport() {
-	hwnd := a.host.HWND()
-	go func() {
-		p, err := winutil.OpenFile(hwnd, "导入 HAR", harFilters)
-		if err != nil {
-			return
-		}
+	a.choosePath(false, "导入 HAR", "", "", harFilters, func(p string) {
 		a.Post(func() { a.importHAR(p) })
-	}()
+	})
 }
 
 // importHAR reads a HAR file in the background and adds its entries.
@@ -68,12 +63,7 @@ func (a *App) pickExport(all bool) {
 }
 
 func (a *App) exportSessions(ss []*capture.Session, name string) {
-	hwnd := a.host.HWND()
-	go func() {
-		p, err := winutil.SaveFile(hwnd, "导出 HAR", name, "har", harFilters)
-		if err != nil {
-			return
-		}
+	a.choosePath(true, "导出 HAR", name, "har", harFilters, func(p string) {
 		f, err := os.Create(p)
 		if err == nil {
 			w := bufio.NewWriterSize(f, 1<<20)
@@ -92,7 +82,7 @@ func (a *App) exportSessions(ss []*capture.Session, name string) {
 				a.Toast(toastOK, fmt.Sprintf("已导出 %d 个请求", len(ss)))
 			}
 		})
-	}()
+	})
 }
 
 // copyHAR puts the sessions on the clipboard as HAR.

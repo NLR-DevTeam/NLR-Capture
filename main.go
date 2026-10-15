@@ -1,7 +1,7 @@
-// NLR Capture is a native Windows HTTP/HTTPS debugging proxy: it records
-// traffic through the system proxy or a virtual network adapter, decrypts
-// HTTPS, and shows it in a DevTools-style network panel. The window is
-// drawn with Gio, without any web view.
+// NLR Capture is a native HTTP/HTTPS debugging proxy for Windows and
+// Linux: it records traffic through the system proxy or a virtual network
+// adapter, decrypts HTTPS, and shows it in a DevTools-style network panel.
+// The window is drawn with Gio, without any web view.
 package main
 
 import (
@@ -67,6 +67,7 @@ func main() {
 
 	h := &host{w: w}
 	a := ui.New(h, cfg, dir)
+	watchSignals(a)
 	if *harFlag != "" {
 		a.DropFiles([]string{*harFlag})
 	} else if flag.NArg() > 0 {

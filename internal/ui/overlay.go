@@ -15,7 +15,7 @@ import (
 	"gioui.org/unit"
 	"gioui.org/widget"
 
-	"nlrcapture/internal/winutil"
+	"nlrcapture/internal/osutil"
 )
 
 // ---- Context menu -----------------------------------------------------
@@ -776,7 +776,7 @@ func (d *aboutDialog) Layout(gtx layout.Context, a *App) layout.Dimensions {
 		d.Submit(a)
 	}
 	if d.dataClk.Clicked(gtx) {
-		go winutil.Open(a.dataDir)
+		go osutil.Open(a.dataDir)
 	}
 	return a.dialogFrame(gtx, "NLR Capture", 400, &d.closeClk, d,
 		func(gtx layout.Context) layout.Dimensions {

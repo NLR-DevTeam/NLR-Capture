@@ -14,8 +14,8 @@ import (
 	"nlrcapture/internal/capture"
 	"nlrcapture/internal/certs"
 	"nlrcapture/internal/config"
+	"nlrcapture/internal/osutil"
 	"nlrcapture/internal/proxy"
-	"nlrcapture/internal/winutil"
 )
 
 // ---- Settings ---------------------------------------------------------
@@ -269,13 +269,8 @@ func (d *certDialog) Layout(gtx layout.Context, a *App) layout.Dimensions {
 		})
 	}
 	if d.exportClk.Clicked(gtx) && ca != nil {
-		hwnd := a.host.HWND()
-		go func() {
-			p, err := winutil.SaveFile(hwnd, "导出根证书", "NLRCaptureRoot.crt", "crt", []winutil.Filter{{Name: "PEM 证书", Pattern: "*.crt;*.pem"}, {Name: "DER 证书", Pattern: "*.cer"}})
-			if err != nil {
-				return
-			}
-			err = ca.Export(p)
+		a.choosePath(true, "导出根证书", "NLRCaptureRoot.crt", "crt", []osutil.Filter{{Name: "PEM 证书", Pattern: "*.crt;*.pem"}, {Name: "DER 证书", Pattern: "*.cer"}}, func(p string) {
+			err := ca.Export(p)
 			a.Post(func() {
 				if err != nil {
 					a.Toast(toastError, "导出失败："+err.Error())
@@ -283,7 +278,7 @@ func (d *certDialog) Layout(gtx layout.Context, a *App) layout.Dimensions {
 					a.Toast(toastOK, "已导出")
 				}
 			})
-		}()
+		})
 	}
 	if d.regenClk.Clicked(gtx) {
 		a.Open(&confirmDialog{

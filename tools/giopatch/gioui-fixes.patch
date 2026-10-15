@@ -1,0 +1,557 @@
+--- a/app/os_wayland.go
++++ b/app/os_wayland.go
+@@ -60,6 +60,113 @@
+ #include "wayland_xdg_shell.h"
+ #include "wayland_xdg_decoration.h"
+ 
++// The cursor-shape protocol lets the compositor draw the pointer cursor,
++// which is the only way to get the cursor size and theme of the desktop:
++// a cursor loaded by the client has to guess the output scale, and
++// Xcursor picks the closest available image size, which is too large
++// under fractional scaling.
++//
++// The interface below is the wayland-scanner output for cursor-shape-v1,
++// inlined because wayland-scanner is not a build dependency. Only what is
++// needed is kept: the manager's destroy/get_pointer and the device's
++// destroy/set_shape.
++struct wp_cursor_shape_manager_v1;
++struct wp_cursor_shape_device_v1;
++
++extern const struct wl_interface wl_pointer_interface;
++
++// Shape values of wp_cursor_shape_device_v1.set_shape.
++enum {
++	GIO_CURSOR_SHAPE_DEFAULT = 1,
++	GIO_CURSOR_SHAPE_CONTEXT_MENU = 2,
++	GIO_CURSOR_SHAPE_HELP = 3,
++	GIO_CURSOR_SHAPE_POINTER = 4,
++	GIO_CURSOR_SHAPE_PROGRESS = 5,
++	GIO_CURSOR_SHAPE_WAIT = 6,
++	GIO_CURSOR_SHAPE_CELL = 7,
++	GIO_CURSOR_SHAPE_CROSSHAIR = 8,
++	GIO_CURSOR_SHAPE_TEXT = 9,
++	GIO_CURSOR_SHAPE_VERTICAL_TEXT = 10,
++	GIO_CURSOR_SHAPE_ALIAS = 11,
++	GIO_CURSOR_SHAPE_COPY = 12,
++	GIO_CURSOR_SHAPE_MOVE = 13,
++	GIO_CURSOR_SHAPE_NO_DROP = 14,
++	GIO_CURSOR_SHAPE_NOT_ALLOWED = 15,
++	GIO_CURSOR_SHAPE_GRAB = 16,
++	GIO_CURSOR_SHAPE_GRABBING = 17,
++	GIO_CURSOR_SHAPE_E_RESIZE = 18,
++	GIO_CURSOR_SHAPE_N_RESIZE = 19,
++	GIO_CURSOR_SHAPE_NE_RESIZE = 20,
++	GIO_CURSOR_SHAPE_NW_RESIZE = 21,
++	GIO_CURSOR_SHAPE_S_RESIZE = 22,
++	GIO_CURSOR_SHAPE_SE_RESIZE = 23,
++	GIO_CURSOR_SHAPE_SW_RESIZE = 24,
++	GIO_CURSOR_SHAPE_W_RESIZE = 25,
++	GIO_CURSOR_SHAPE_EW_RESIZE = 26,
++	GIO_CURSOR_SHAPE_NS_RESIZE = 27,
++	GIO_CURSOR_SHAPE_NESW_RESIZE = 28,
++	GIO_CURSOR_SHAPE_NWSE_RESIZE = 29,
++	GIO_CURSOR_SHAPE_COL_RESIZE = 30,
++	GIO_CURSOR_SHAPE_ROW_RESIZE = 31,
++	GIO_CURSOR_SHAPE_ALL_SCROLL = 32,
++};
++
++static const struct wl_message gio_cursor_shape_device_requests[] = {
++	{ "destroy", "", NULL },
++	{ "set_shape", "uu", NULL },
++};
++
++static const struct wl_interface gio_cursor_shape_device_interface = {
++	"wp_cursor_shape_device_v1", 1,
++	2, gio_cursor_shape_device_requests,
++	0, NULL,
++};
++
++static const struct wl_interface *gio_cursor_shape_manager_types[] = {
++	&gio_cursor_shape_device_interface,
++	&wl_pointer_interface,
++};
++
++static const struct wl_message gio_cursor_shape_manager_requests[] = {
++	{ "destroy", "", NULL },
++	{ "get_pointer", "no", gio_cursor_shape_manager_types },
++};
++
++static const struct wl_interface gio_cursor_shape_manager_interface = {
++	"wp_cursor_shape_manager_v1", 1,
++	2, gio_cursor_shape_manager_requests,
++	0, NULL,
++};
++
++static struct wp_cursor_shape_manager_v1 *gio_cursor_shape_manager_bind(
++		struct wl_registry *reg, uint32_t name) {
++	return (struct wp_cursor_shape_manager_v1 *)wl_registry_bind(
++		reg, name, &gio_cursor_shape_manager_interface, 1);
++}
++
++static struct wp_cursor_shape_device_v1 *gio_cursor_shape_manager_get_pointer(
++		struct wp_cursor_shape_manager_v1 *m, struct wl_pointer *p) {
++	return (struct wp_cursor_shape_device_v1 *)wl_proxy_marshal_flags(
++		(struct wl_proxy *)m, 1, &gio_cursor_shape_device_interface,
++		wl_proxy_get_version((struct wl_proxy *)m), 0, NULL, p);
++}
++
++static void gio_cursor_shape_device_set_shape(
++		struct wp_cursor_shape_device_v1 *d, uint32_t serial, uint32_t shape) {
++	wl_proxy_marshal_flags((struct wl_proxy *)d, 1, NULL,
++		wl_proxy_get_version((struct wl_proxy *)d), 0, serial, shape);
++}
++
++static void gio_cursor_shape_manager_destroy(struct wp_cursor_shape_manager_v1 *m) {
++	wl_proxy_marshal_flags((struct wl_proxy *)m, 0, NULL,
++		wl_proxy_get_version((struct wl_proxy *)m), WL_MARSHAL_FLAG_DESTROY);
++}
++
++static void gio_cursor_shape_device_destroy(struct wp_cursor_shape_device_v1 *d) {
++	wl_proxy_marshal_flags((struct wl_proxy *)d, 0, NULL,
++		wl_proxy_get_version((struct wl_proxy *)d), WL_MARSHAL_FLAG_DESTROY);
++}
++
+ extern const struct wl_registry_listener gio_registry_listener;
+ extern const struct wl_surface_listener gio_surface_listener;
+ extern const struct xdg_surface_listener gio_xdg_surface_listener;
+@@ -88,6 +195,7 @@
+ 	shm               *C.struct_wl_shm
+ 	dataDeviceManager *C.struct_wl_data_device_manager
+ 	decor             *C.struct_zxdg_decoration_manager_v1
++	cursorShape       *C.struct_wp_cursor_shape_manager_v1
+ 	seat              *wlSeat
+ 	xkb               *xkb.Context
+ 	outputMap         map[C.uint32_t]*C.struct_wl_output
+@@ -104,10 +212,13 @@
+ }
+ 
+ type wlSeat struct {
+-	disp     *wlDisplay
+-	seat     *C.struct_wl_seat
+-	name     C.uint32_t
+-	pointer  *C.struct_wl_pointer
++	disp    *wlDisplay
++	seat    *C.struct_wl_seat
++	name    C.uint32_t
++	pointer *C.struct_wl_pointer
++	// shapeDev draws the cursor through the compositor; nil if the
++	// cursor shape protocol is unavailable.
++	shapeDev *C.struct_wp_cursor_shape_device_v1
+ 	touch    *C.struct_wl_touch
+ 	keyboard *C.struct_wl_keyboard
+ 	im       *C.struct_zwp_text_input_v3
+@@ -156,14 +267,17 @@
+ }
+ 
+ type window struct {
+-	w          *callbacks
+-	disp       *wlDisplay
+-	surf       *C.struct_wl_surface
+-	wmSurf     *C.struct_xdg_surface
+-	topLvl     *C.struct_xdg_toplevel
+-	decor      *C.struct_zxdg_toplevel_decoration_v1
+-	ppdp, ppsp float32
+-	scroll     struct {
++	w      *callbacks
++	disp   *wlDisplay
++	surf   *C.struct_wl_surface
++	wmSurf *C.struct_xdg_surface
++	topLvl *C.struct_xdg_toplevel
++	decor  *C.struct_zxdg_toplevel_decoration_v1
++	// decorWanted/decorSet track the decoration mode requested through
++	// zxdg_toplevel_decoration_v1, so the same mode is not sent twice.
++	decorWanted, decorSet bool
++	ppdp, ppsp            float32
++	scroll                struct {
+ 		time  time.Duration
+ 		steps image.Point
+ 		dist  f32.Point
+@@ -177,6 +291,11 @@
+ 	cursor struct {
+ 		theme  *C.struct_wl_cursor_theme
+ 		cursor *C.struct_wl_cursor
++		// name is the cursor requested by the application; edge is the
++		// resize edge of an active system gesture, or zero. Both are
++		// reported to the compositor through the cursor shape protocol.
++		name pointer.Cursor
++		edge C.uint32_t
+ 		// system is the active cursor for system gestures
+ 		// such as border resizes and window moves. It
+ 		// is nil if the pointer is not in a system gesture
+@@ -497,6 +616,10 @@
+ 	}
+ 	s.imFocus = nil
+ 	s.resetTextInputState()
++	if s.shapeDev != nil {
++		C.gio_cursor_shape_device_destroy(s.shapeDev)
++		s.shapeDev = nil
++	}
+ 	if s.pointer != nil {
+ 		C.wl_pointer_release(s.pointer)
+ 	}
+@@ -540,7 +663,14 @@
+ 	case s.pointer == nil && caps&C.WL_SEAT_CAPABILITY_POINTER != 0:
+ 		s.pointer = C.wl_seat_get_pointer(s.seat)
+ 		C.wl_pointer_add_listener(s.pointer, &C.gio_pointer_listener, unsafe.Pointer(s.seat))
++		if d := s.disp; d.cursorShape != nil {
++			s.shapeDev = C.gio_cursor_shape_manager_get_pointer(d.cursorShape, s.pointer)
++		}
+ 	case s.pointer != nil && caps&C.WL_SEAT_CAPABILITY_POINTER == 0:
++		if s.shapeDev != nil {
++			C.gio_cursor_shape_device_destroy(s.shapeDev)
++			s.shapeDev = nil
++		}
+ 		C.wl_pointer_release(s.pointer)
+ 		s.pointer = nil
+ 	}
+@@ -584,10 +714,49 @@
+ //export gio_onToplevelConfigure
+ func gio_onToplevelConfigure(data unsafe.Pointer, topLvl *C.struct_xdg_toplevel, width, height C.int32_t, states *C.struct_wl_array) {
+ 	w := callbackLoad(data).(*window)
+-	if width != 0 && height != 0 {
++	// The compositor decides the window state: it maximizes, restores or
++	// fullscreens windows on its own, for example while a maximized window
++	// is dragged. Report it, or the application keeps asking for the mode
++	// it requested last and controls such as a maximize button stop
++	// working.
++	mode := Windowed
++	for _, s := range wlStates(states) {
++		switch s {
++		case C.XDG_TOPLEVEL_STATE_FULLSCREEN:
++			mode = Fullscreen
++		case C.XDG_TOPLEVEL_STATE_MAXIMIZED:
++			if mode != Fullscreen {
++				mode = Maximized
++			}
++		}
++	}
++	// Remember the windowed size when the compositor leaves the windowed
++	// state on its own, as Configure does when the application asks.
++	if w.config.Mode == Windowed && mode != Windowed && w.size.X > 0 && w.size.Y > 0 {
++		w.wsize = w.size.Mul(w.scale)
++	}
++	switch {
++	case width != 0 && height != 0:
+ 		w.size = image.Pt(int(width), int(height))
+ 		w.updateOpaqueRegion()
++	case mode == Windowed && (w.config.Mode == Maximized || w.config.Mode == Fullscreen) && w.wsize.X > 0 && w.wsize.Y > 0:
++		// A zero size leaves the size to the client: going back to the
++		// windowed state, that is the size from before.
++		w.size = w.wsize.Div(w.scale)
++		w.updateOpaqueRegion()
++	}
++	if w.config.Mode != mode {
++		w.config.Mode = mode
++		w.ProcessEvent(ConfigEvent{Config: w.config})
++	}
++}
++
++// wlStates returns the uint32 elements of a Wayland array.
++func wlStates(a *C.struct_wl_array) []C.uint32_t {
++	if a == nil || a.data == nil || a.size == 0 {
++		return nil
+ 	}
++	return unsafe.Slice((*C.uint32_t)(a.data), int(a.size)/int(unsafe.Sizeof(C.uint32_t(0))))
+ }
+ 
+ //export gio_onToplevelDecorationConfigure
+@@ -720,6 +889,8 @@
+ 		d.wm = (*C.struct_xdg_wm_base)(C.wl_registry_bind(reg, name, &C.xdg_wm_base_interface, 1))
+ 	case "zxdg_decoration_manager_v1":
+ 		d.decor = (*C.struct_zxdg_decoration_manager_v1)(C.wl_registry_bind(reg, name, &C.zxdg_decoration_manager_v1_interface, 1))
++	case "wp_cursor_shape_manager_v1":
++		d.cursorShape = C.gio_cursor_shape_manager_bind(reg, name)
+ 	case "zwp_text_input_manager_v3":
+ 		d.imm = (*C.struct_zwp_text_input_manager_v3)(C.wl_registry_bind(reg, name, &C.zwp_text_input_manager_v3_interface, 1))
+ 		if d.seat != nil {
+@@ -1087,6 +1258,18 @@
+ 	cnf := w.config
+ 	cnf.apply(cfg, options)
+ 	w.config.decoHeight = cnf.decoHeight
++	// Ask the compositor for the decoration mode the application wants:
++	// without set_mode it keeps its default, which is server-side
++	// decorations on most compositors, and Decorated(false) would be
++	// silently ignored.
++	if w.decor != nil && (!w.decorSet || w.decorWanted != cnf.Decorated) {
++		w.decorSet, w.decorWanted = true, cnf.Decorated
++		mode := C.ZXDG_TOPLEVEL_DECORATION_V1_MODE_CLIENT_SIDE
++		if cnf.Decorated {
++			mode = C.ZXDG_TOPLEVEL_DECORATION_V1_MODE_SERVER_SIDE
++		}
++		C.zxdg_toplevel_decoration_v1_set_mode(w.decor, C.uint32_t(mode))
++	}
+ 
+ 	switch cnf.Mode {
+ 	case Fullscreen:
+@@ -1094,7 +1277,7 @@
+ 		case Minimized, Fullscreen:
+ 		default:
+ 			w.config.Mode = Fullscreen
+-			w.wsize = w.config.Size
++			w.wsize = windowedSize(w.config.Size, cnf.Size)
+ 			C.xdg_toplevel_set_fullscreen(w.topLvl, nil)
+ 		}
+ 	case Minimized:
+@@ -1109,7 +1292,7 @@
+ 		case Minimized, Fullscreen:
+ 		default:
+ 			w.config.Mode = Maximized
+-			w.wsize = w.config.Size
++			w.wsize = windowedSize(w.config.Size, cnf.Size)
+ 			C.xdg_toplevel_set_maximized(w.topLvl)
+ 			w.setTitle(prev, cnf)
+ 		}
+@@ -1117,13 +1300,13 @@
+ 		switch prev.Mode {
+ 		case Fullscreen:
+ 			w.config.Mode = Windowed
+-			w.size = w.wsize.Div(w.scale)
++			w.restoreWindowed()
+ 			C.xdg_toplevel_unset_fullscreen(w.topLvl)
+ 		case Minimized:
+ 			w.config.Mode = Windowed
+ 		case Maximized:
+ 			w.config.Mode = Windowed
+-			w.size = w.wsize.Div(w.scale)
++			w.restoreWindowed()
+ 			C.xdg_toplevel_unset_maximized(w.topLvl)
+ 		}
+ 		w.setTitle(prev, cnf)
+@@ -1139,6 +1322,25 @@
+ 	w.ProcessEvent(ConfigEvent{Config: w.config})
+ }
+ 
++// windowedSize returns the size to restore when the window leaves the
++// maximized or fullscreen state: its current size, or the requested one
++// while it has none, as when it is created maximized.
++func windowedSize(cur, requested image.Point) image.Point {
++	if cur.X > 0 && cur.Y > 0 {
++		return cur
++	}
++	return requested
++}
++
++// restoreWindowed goes back to the size saved before the window was
++// maximized or made fullscreen. Without a saved size it keeps the current
++// one: a zero size would leave the window without a surface to draw on.
++func (w *window) restoreWindowed() {
++	if w.wsize.X > 0 && w.wsize.Y > 0 {
++		w.size = w.wsize.Div(w.scale)
++	}
++}
++
+ func (w *window) setWindowConstraints() {
+ 	decoHeight := w.decoHeight()
+ 	if scaled := w.config.MinSize.Div(w.scale); scaled != (image.Point{}) {
+@@ -1197,6 +1399,7 @@
+ }
+ 
+ func (w *window) SetCursor(cursor pointer.Cursor) {
++	w.cursor.name = cursor
+ 	w.cursor.cursor = w.loadCursor(cursor)
+ 	w.updateCursor()
+ }
+@@ -1211,6 +1414,16 @@
+ }
+ 
+ func (w *window) setCursor(pointer *C.struct_wl_pointer, serial C.uint32_t) {
++	if s := w.disp.seat; s != nil && s.shapeDev != nil {
++		name := w.cursor.name
++		if w.cursor.edge != 0 {
++			name = edgeCursor(w.cursor.edge)
++		}
++		if !cursorHidden(name) {
++			C.gio_cursor_shape_device_set_shape(s.shapeDev, serial, C.uint32_t(cursorShape(name)))
++			return
++		}
++	}
+ 	c := w.cursor.system
+ 	if c == nil {
+ 		c = w.cursor.cursor
+@@ -1231,6 +1444,88 @@
+ 	C.wl_surface_commit(w.cursor.surf)
+ }
+ 
++// edgeCursor is the cursor shown while resizing through a window edge.
++func edgeCursor(edge C.uint32_t) pointer.Cursor {
++	switch edge {
++	case C.XDG_TOPLEVEL_RESIZE_EDGE_TOP_LEFT:
++		return pointer.CursorNorthWestResize
++	case C.XDG_TOPLEVEL_RESIZE_EDGE_TOP_RIGHT:
++		return pointer.CursorNorthEastResize
++	case C.XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_LEFT:
++		return pointer.CursorSouthWestResize
++	case C.XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM_RIGHT:
++		return pointer.CursorSouthEastResize
++	case C.XDG_TOPLEVEL_RESIZE_EDGE_TOP:
++		return pointer.CursorNorthResize
++	case C.XDG_TOPLEVEL_RESIZE_EDGE_BOTTOM:
++		return pointer.CursorSouthResize
++	case C.XDG_TOPLEVEL_RESIZE_EDGE_LEFT:
++		return pointer.CursorWestResize
++	case C.XDG_TOPLEVEL_RESIZE_EDGE_RIGHT:
++		return pointer.CursorEastResize
++	}
++	return pointer.CursorDefault
++}
++
++// cursorHidden reports whether c hides the pointer. The cursor shape
++// protocol has no hidden shape, so such cursors keep the client-side path.
++func cursorHidden(c pointer.Cursor) bool { return c == pointer.CursorNone }
++
++// cursorShape maps a cursor to its wp_cursor_shape_device_v1 shape value.
++func cursorShape(c pointer.Cursor) C.int {
++	switch c {
++	case pointer.CursorText:
++		return C.GIO_CURSOR_SHAPE_TEXT
++	case pointer.CursorVerticalText:
++		return C.GIO_CURSOR_SHAPE_VERTICAL_TEXT
++	case pointer.CursorPointer:
++		return C.GIO_CURSOR_SHAPE_POINTER
++	case pointer.CursorCrosshair:
++		return C.GIO_CURSOR_SHAPE_CROSSHAIR
++	case pointer.CursorAllScroll:
++		return C.GIO_CURSOR_SHAPE_ALL_SCROLL
++	case pointer.CursorColResize:
++		return C.GIO_CURSOR_SHAPE_COL_RESIZE
++	case pointer.CursorRowResize:
++		return C.GIO_CURSOR_SHAPE_ROW_RESIZE
++	case pointer.CursorGrab:
++		return C.GIO_CURSOR_SHAPE_GRAB
++	case pointer.CursorGrabbing:
++		return C.GIO_CURSOR_SHAPE_GRABBING
++	case pointer.CursorNotAllowed:
++		return C.GIO_CURSOR_SHAPE_NOT_ALLOWED
++	case pointer.CursorWait:
++		return C.GIO_CURSOR_SHAPE_WAIT
++	case pointer.CursorProgress:
++		return C.GIO_CURSOR_SHAPE_PROGRESS
++	case pointer.CursorNorthWestResize:
++		return C.GIO_CURSOR_SHAPE_NW_RESIZE
++	case pointer.CursorNorthEastResize:
++		return C.GIO_CURSOR_SHAPE_NE_RESIZE
++	case pointer.CursorSouthWestResize:
++		return C.GIO_CURSOR_SHAPE_SW_RESIZE
++	case pointer.CursorSouthEastResize:
++		return C.GIO_CURSOR_SHAPE_SE_RESIZE
++	case pointer.CursorNorthSouthResize:
++		return C.GIO_CURSOR_SHAPE_NS_RESIZE
++	case pointer.CursorEastWestResize:
++		return C.GIO_CURSOR_SHAPE_EW_RESIZE
++	case pointer.CursorWestResize:
++		return C.GIO_CURSOR_SHAPE_W_RESIZE
++	case pointer.CursorEastResize:
++		return C.GIO_CURSOR_SHAPE_E_RESIZE
++	case pointer.CursorNorthResize:
++		return C.GIO_CURSOR_SHAPE_N_RESIZE
++	case pointer.CursorSouthResize:
++		return C.GIO_CURSOR_SHAPE_S_RESIZE
++	case pointer.CursorNorthEastSouthWestResize:
++		return C.GIO_CURSOR_SHAPE_NESW_RESIZE
++	case pointer.CursorNorthWestSouthEastResize:
++		return C.GIO_CURSOR_SHAPE_NWSE_RESIZE
++	}
++	return C.GIO_CURSOR_SHAPE_DEFAULT
++}
++
+ func (w *window) resetFling() {
+ 	w.fling.start = false
+ 	w.fling.anim = fling.Animation{}
+@@ -1874,9 +2169,10 @@
+ 		Time:      time.Duration(t) * time.Millisecond,
+ 		Modifiers: w.disp.xkb.Modifiers(),
+ 	})
+-	c, _ := w.systemGesture()
++	c, edge := w.systemGesture()
+ 	if c != w.cursor.system {
+ 		w.cursor.system = c
++		w.cursor.edge = edge
+ 		w.updateCursor()
+ 	}
+ }
+@@ -1963,7 +2259,9 @@
+ 	}
+ 	w.flushScroll()
+ 	size, cfg := w.getConfig()
+-	if cfg == (unit.Metric{}) {
++	// A window without a size yet, or restored to none, has nothing to
++	// draw on; Gio panics on a zero-sized frame.
++	if cfg == (unit.Metric{}) || size.X <= 0 || size.Y <= 0 {
+ 		return
+ 	}
+ 	if size != w.config.Size {
+@@ -2189,6 +2487,9 @@
+ 	if d.decor != nil {
+ 		C.zxdg_decoration_manager_v1_destroy(d.decor)
+ 	}
++	if d.cursorShape != nil {
++		C.gio_cursor_shape_manager_destroy(d.cursorShape)
++	}
+ 	if d.shm != nil {
+ 		C.wl_shm_destroy(d.shm)
+ 	}
+--- a/app/os_x11.go
++++ b/app/os_x11.go
+@@ -22,6 +22,22 @@
+ #include <X11/Xcursor/Xcursor.h>
+ #include <xkbcommon/xkbcommon-x11.h>
+ 
++// gio_set_motif_hints asks the window manager to keep or drop the window
++// frame. _MOTIF_WM_HINTS is the only decoration control understood by the
++// common window managers.
++static void gio_set_motif_hints(Display *dpy, Window win, int decorated) {
++	struct {
++		unsigned long flags, functions, decorations, input_mode, status;
++	} hints;
++	hints.flags = (1L << 1); // MWM_HINTS_DECORATIONS
++	hints.functions = 0;
++	hints.decorations = decorated ? 1 : 0;
++	hints.input_mode = 0;
++	hints.status = 0;
++	Atom motif = XInternAtom(dpy, "_MOTIF_WM_HINTS", False);
++	XChangeProperty(dpy, win, motif, motif, 32, PropModeReplace, (unsigned char *)&hints, 5);
++}
++
+ */
+ import "C"
+ 
+@@ -172,8 +188,6 @@
+ 	prev := w.config
+ 	cnf := w.config
+ 	cnf.apply(w.metric, options)
+-	// Decorations are never disabled.
+-	cnf.Decorated = true
+ 
+ 	switch cnf.Mode {
+ 	case Fullscreen:
+@@ -241,6 +255,7 @@
+ 	}
+ 	if cnf.Decorated != prev.Decorated {
+ 		w.config.Decorated = cnf.Decorated
++		w.setDecorations(cnf.Decorated)
+ 	}
+ 	w.ProcessEvent(ConfigEvent{Config: w.config})
+ }
+@@ -942,12 +957,22 @@
+ 	}
+ 
+ 	// make the window visible on the screen
++	w.setDecorations(cnf.Decorated)
+ 	C.XMapWindow(dpy, win)
+ 	w.Configure(options)
+ 	w.ProcessEvent(X11ViewEvent{Display: unsafe.Pointer(dpy), Window: uintptr(win)})
+ 	return nil
+ }
+ 
++// setDecorations asks the window manager to add or drop the window frame.
++func (w *x11Window) setDecorations(decorated bool) {
++	d := C.int(0)
++	if decorated {
++		d = 1
++	}
++	C.gio_set_motif_hints(w.x, w.xw, d)
++}
++
+ // detectUIScale reports the system UI scale, or 1.0 if it fails.
+ func x11DetectUIScale(dpy *C.Display) float32 {
+ 	// default fixed DPI value used in most desktop UI toolkits

@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/netip"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -16,11 +17,11 @@ import (
 	"nlrcapture/internal/capture"
 	"nlrcapture/internal/certs"
 	"nlrcapture/internal/config"
+	"nlrcapture/internal/osutil"
 	"nlrcapture/internal/procinfo"
 	"nlrcapture/internal/proxy"
 	"nlrcapture/internal/sysproxy"
 	"nlrcapture/internal/tun"
-	"nlrcapture/internal/winutil"
 )
 
 // service runs the capture machinery behind the UI: the proxy listener,
@@ -89,7 +90,7 @@ func (s *service) start() {
 	}
 	s.listen(true)
 	mode := a.set.Mode
-	if mode == config.ModeTUN && !winutil.IsAdmin() {
+	if mode == config.ModeTUN && !osutil.Elevated() {
 		// Elevation is asked for only when the user picks the mode.
 		mode = config.ModeSystem
 	}
@@ -174,20 +175,24 @@ func (s *service) requestMode(m string) {
 		return
 	}
 	if m == config.ModeTUN {
-		if !winutil.IsAdmin() {
-			// Restart elevated straight away; Windows asks for consent.
+		if !osutil.Elevated() {
+			// Restart elevated straight away; the system asks for consent.
 			a.updateSettings(func(st *config.Settings) { st.Mode = m })
 			a.Flush()
-			if err := winutil.RelaunchAdmin("-mode", config.ModeTUN); err != nil {
+			if err := osutil.RelaunchElevated("-mode", config.ModeTUN); err != nil {
 				a.updateSettings(func(st *config.Settings) { st.Mode = s.cur })
-				a.Toast(toastError, "未获得管理员权限")
+				msg := "未获得管理员权限"
+				if !errors.Is(err, osutil.ErrCancelled) && runtime.GOOS != "windows" {
+					msg = err.Error()
+				}
+				a.Toast(toastError, msg)
 				return
 			}
 			a.quit()
 			return
 		}
-		if tun.FindDLL() == "" {
-			a.Toast(toastError, "缺少 wintun.dll")
+		if err := tun.Ready(); err != nil {
+			a.Toast(toastError, err.Error())
 			return
 		}
 	}
@@ -238,7 +243,6 @@ func (s *service) switchMode(from, to string) error {
 		}
 	case config.ModeTUN:
 		dev, err := tun.Start(tun.Options{
-			DLLPath:   tun.FindDLL(),
 			BlockQUIC: s.a.set.BlockQUIC,
 			Handler:   s.transparent,
 		})

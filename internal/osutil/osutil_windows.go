@@ -1,6 +1,4 @@
-// Package winutil holds small Windows helpers: elevation, file dialogs and
-// opening things with the shell.
-package winutil
+package osutil
 
 import (
 	"os"
@@ -10,15 +8,16 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// IsAdmin reports whether the process runs elevated.
-func IsAdmin() bool {
+// Elevated reports whether the process runs elevated, as the virtual
+// adapter needs.
+func Elevated() bool {
 	return windows.GetCurrentProcessToken().IsElevated()
 }
 
-// RelaunchAdmin starts the program again elevated with the given extra
+// RelaunchElevated starts the program again elevated with the given extra
 // arguments. Windows asks the user for consent; the call returns once the
 // new process started (or the user declined, which is an error).
-func RelaunchAdmin(args ...string) error {
+func RelaunchElevated(args ...string) error {
 	exe, err := os.Executable()
 	if err != nil {
 		return err

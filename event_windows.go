@@ -21,3 +21,7 @@ func platformEvent(h *host, a *ui.App, e event.Event) {
 	hwnd := v.HWND
 	h.w.Run(func() { ui.InstallWindowHook(hwnd, a.DropFiles, a.EmergencyRestore) })
 }
+
+// watchSignals does nothing on Windows: the window hook restores the
+// system settings when the session ends (WM_ENDSESSION).
+func watchSignals(*ui.App) {}

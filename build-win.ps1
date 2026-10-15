@@ -1,11 +1,12 @@
-# Builds NLR Capture into dist\ with the toolchain in "..\Go Tool Chain".
-#   .\build.ps1            release build
-#   .\build.ps1 -Console   keep a console window (shows panics and logs)
+# Builds NLR Capture for Windows into dist\windows\, with the toolchain in
+# "..\Go Tool Chain" when it is there, else the go on PATH.
+#   .\build-win.ps1            release build
+#   .\build-win.ps1 -Console   keep a console window (shows panics and logs)
 #
-# dist\ holds everything the program needs; nothing is downloaded at run
-# time. The program file is named nlrcapture.exe.bin because it is never
-# started on the build machine: copy dist\ to the test machine and rename
-# it to nlrcapture.exe there.
+# dist\windows\ holds everything the program needs; nothing is downloaded
+# at run time. The program file is named nlrcapture.exe.bin because it is
+# never started on the build machine: copy the folder to the test machine
+# and rename it to nlrcapture.exe there.
 param(
     [switch]$Console
 )
@@ -18,6 +19,8 @@ if (Test-Path (Join-Path $tc "go\bin\go.exe")) {
     $env:Path = (Join-Path $tc "go\bin") + ";" + $env:Path
 }
 $env:CGO_ENABLED = "0"
+$env:GOOS = "windows"
+$env:GOARCH = "amd64"
 Set-Location $root
 
 # Wintun (the virtual adapter driver) ships with the program. The official
@@ -43,7 +46,7 @@ if (-not (Test-Path "rsrc_windows_amd64.syso")) {
 }
 $ld = "-s -w -X gioui.org/app.ID=nlrcapture"
 if (-not $Console) { $ld += " -H windowsgui" }
-$dist = Join-Path $root "dist"
+$dist = Join-Path $root "dist\windows"
 if (Test-Path $dist) { Remove-Item -Recurse -Force $dist }
 New-Item -ItemType Directory -Force $dist | Out-Null
 go build -trimpath -ldflags $ld -o (Join-Path $dist "nlrcapture.exe.bin") .

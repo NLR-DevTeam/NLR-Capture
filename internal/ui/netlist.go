@@ -20,8 +20,8 @@ import (
 
 	"nlrcapture/internal/capture"
 	"nlrcapture/internal/config"
+	"nlrcapture/internal/osutil"
 	"nlrcapture/internal/proxy"
-	"nlrcapture/internal/winutil"
 )
 
 const rowH = unit.Dp(22)
@@ -981,5 +981,5 @@ func openInBrowser(s *capture.Session) {
 	if !strings.HasPrefix(u, "http://") && !strings.HasPrefix(u, "https://") {
 		return
 	}
-	go winutil.Open(u)
+	go osutil.Open(u)
 }

@@ -1,0 +1,4 @@
+# The Gio patch is matched line by line against LF sources, and the shell
+# script must run on Linux: keep both LF on every checkout.
+*.patch text eol=lf
+*.sh text eol=lf
