@@ -28,7 +28,7 @@ import (
 )
 
 // Version is the application version shown in the about box.
-var Version = "1.0.0"
+var Version = "1.0.1"
 
 // Host is the window the app is displayed in.
 type Host interface {

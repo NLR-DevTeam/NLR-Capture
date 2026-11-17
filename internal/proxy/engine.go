@@ -32,6 +32,9 @@ type Config struct {
 	UpstreamProxy string
 	MaxBody       int64
 	DisableCache  bool
+	// HidePreflight leaves CORS preflight requests out of the list; they
+	// are still forwarded.
+	HidePreflight bool
 	Throttle      Throttle
 	Rules         []Rule
 	Breakpoints   Breakpoints
@@ -242,8 +245,16 @@ func (e *Engine) begin(s *capture.Session) *rec {
 	if !e.recording.Load() {
 		return &rec{e: e}
 	}
+	if e.config().HidePreflight && isPreflight(s) {
+		return &rec{e: e}
+	}
 	e.Store.Add(s)
 	return &rec{e: e, id: s.ID}
+}
+
+// isPreflight tells a browser's CORS preflight request.
+func isPreflight(s *capture.Session) bool {
+	return s.Method == "OPTIONS" && s.ReqHeader.Has("Access-Control-Request-Method")
 }
 
 func (r *rec) update(f func(s *capture.Session)) {

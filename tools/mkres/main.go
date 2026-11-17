@@ -129,15 +129,15 @@ func main() {
 		UseCommonControlsV6: true,
 	})
 	var vi version.Info
-	vi.SetFileVersion("1.0.0.0")
-	vi.SetProductVersion("1.0.0.0")
+	vi.SetFileVersion("1.0.1.0")
+	vi.SetProductVersion("1.0.1.0")
 	for k, v := range map[string]string{
 		version.ProductName:      "NLR Capture",
 		version.FileDescription:  "NLR Capture",
 		version.OriginalFilename: "NLRCapture.exe",
 		version.InternalName:     "NLRCapture",
-		version.ProductVersion:   "1.0.0",
-		version.FileVersion:      "1.0.0",
+		version.ProductVersion:   "1.0.1",
+		version.FileVersion:      "1.0.1",
 	} {
 		must(vi.Set(version.LangDefault, k, v))
 	}

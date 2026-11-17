@@ -897,6 +897,7 @@ func (l *netList) rowMenu() {
 			}
 		}},
 		{Label: "编辑并重放…", Hint: "Ctrl+K", Disabled: !httpOnly, Do: func() { a.Open(newComposeDialog(a, s)) }},
+		{Label: "下载到…", Disabled: !httpOnly, Do: func() { a.downloadTo(s) }},
 		{Label: "在默认浏览器打开", Disabled: !httpOnly, Do: func() { openInBrowser(s) }},
 	}
 	debugItems := []MenuItem{

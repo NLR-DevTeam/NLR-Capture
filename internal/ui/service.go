@@ -113,6 +113,7 @@ func (s *service) applyConfig() {
 		IgnoreCertErrors: set.IgnoreCertErrors,
 		UpstreamProxy:    set.UpstreamProxy,
 		MaxBody:          int64(set.MaxBodyMB) << 20,
+		HidePreflight:    set.HidePreflight,
 
 		Throttle:    proxy.ThrottlePresets[s.a.throttle],
 		Rules:       set.Rules,

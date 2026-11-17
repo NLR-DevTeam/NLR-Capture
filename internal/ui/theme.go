@@ -105,7 +105,7 @@ func (th *Theme) Apply(light bool, accent color.NRGBA) {
 	th.Light = light
 	if light {
 		th.Bg0 = rgb(0xffffff)
-		th.Bg1 = rgb(0xf3f4f6)
+		th.Bg1 = rgb(0xf9f9fb)
 		th.Bg2 = rgb(0xffffff)
 		th.Bg3 = rgb(0xe9ebef)
 		th.Bg4 = rgb(0xdde1e6)

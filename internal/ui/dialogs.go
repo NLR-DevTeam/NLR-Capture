@@ -25,7 +25,7 @@ type settingsDialog struct {
 	port, bypass, upstream, maxBody, max Field
 	noDecrypt                            Field
 	listenAll, decrypt, autoBypass       widget.Bool
-	ignoreCert, blockQUIC                widget.Bool
+	ignoreCert, blockQUIC, preflight     widget.Bool
 	look, accent                         Segmented
 	list                                 widget.List
 	closeClk, okClk, noClk               widget.Clickable
@@ -52,6 +52,7 @@ func newSettingsDialog(a *App) *settingsDialog {
 	d.autoBypass.Value = s.AutoBypass
 	d.ignoreCert.Value = s.IgnoreCertErrors
 	d.blockQUIC.Value = s.BlockQUIC
+	d.preflight.Value = s.HidePreflight
 	d.look.Value = s.Appearance
 	d.accent.Value = s.Accent
 	d.list.Axis = layout.Vertical
@@ -90,6 +91,7 @@ func (d *settingsDialog) Submit(a *App) {
 		s.MaxBodyMB, s.MaxSessions, s.NoDecrypt = maxBody, maxN, hosts
 		s.ListenAll, s.Decrypt, s.AutoBypass = d.listenAll.Value, d.decrypt.Value, d.autoBypass.Value
 		s.IgnoreCertErrors, s.BlockQUIC = d.ignoreCert.Value, d.blockQUIC.Value
+		s.HidePreflight = d.preflight.Value
 		s.Appearance, s.Accent = d.look.Value, d.accent.Value
 	})
 	a.applyTheme()
@@ -146,6 +148,7 @@ func (d *settingsDialog) Layout(gtx layout.Context, a *App) layout.Dimensions {
 				field("系统代理例外", &d.bypass, 0),
 				field("上游代理", &d.upstream, 0),
 				check(&d.listenAll, "允许局域网连接"),
+				check(&d.preflight, "屏蔽预检请求 (CORS OPTIONS)"),
 			))
 		},
 		func(gtx layout.Context) layout.Dimensions {

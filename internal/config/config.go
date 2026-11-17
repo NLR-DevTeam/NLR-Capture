@@ -47,6 +47,7 @@ type Settings struct {
 	MaxBodyMB        int      `json:"maxBodyMB"`
 	MaxSessions      int      `json:"maxSessions"`
 	BlockQUIC        bool     `json:"blockQUIC"`
+	HidePreflight    bool     `json:"hidePreflight"`
 	CertAsked        bool     `json:"certAsked"`
 
 	Appearance string `json:"appearance"`
